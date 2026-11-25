@@ -1,0 +1,3 @@
+interface:
+  display_name: "ADB APK Installer"
+  short_description: "Install single or split APK/XAPK packages via ADB with Play Store attribution and ABI checking"

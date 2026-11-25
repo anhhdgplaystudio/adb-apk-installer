@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.apk
+*.xapk
+*_extracted/
+.DS_Store
+Thumbs.db
