@@ -1,83 +1,54 @@
 ---
 name: adb-apk-installer
-description: Locate ADB, diagnose connected Android devices, verify ABI architecture, and install standalone or split APK/XAPK packages with Google Play installer metadata (-i com.android.vending).
+description: Cài file APK / XAPK / APKS / APKM lên thiết bị Android qua ADB (USB hoặc IP) kèm metadata "cài từ CH Play" (installer com.android.vending). Dùng khi người dùng gọi "/adb-apk-installer <đường dẫn file> [IP]", hoặc nhắc "cài apk", "cài xapk", "install apk qua adb", "sideload", "adb install", "giả installer CH Play / Google Play".
+argument-hint: "<đường dẫn .apk|.xapk|.apks|.apkm> [IP[:port] | serial]"
 metadata:
-  short-description: ADB APK and XAPK installer with Play Store metadata
+  short-description: One-shot ADB APK/XAPK installer with Play Store installer metadata
 ---
 
 # ADB APK & XAPK Installer
 
-Diagnose Android device connections, resolve device architecture and driver mismatches, and install single or split APK (XAPK/APKM) packages with Google Play Store installer attribution.
+Arguments: `$ARGUMENTS` = `<file path> [device IP, IP:port or serial]`.
 
-## Core Capabilities
+## Do this
 
-- **Device Diagnostics:** Detect USB or Wireless ADB devices, identify hardware/OS ABI architecture (32-bit `armeabi-v7a` vs 64-bit `arm64-v8a`), and troubleshoot missing drivers.
-- **Package Inspection:** Differentiate between standard monolithic APKs and split APK bundles (AAB / XAPK), extracting native libraries and configuration splits.
-- **Installation with Attribution:** Install single or multiple split APKs with `-i com.android.vending` to set Google Play Store as the installer package.
-
----
-
-## Workflow
-
-### 1. Check Connected Devices & ADB
-Locate `adb` executable and query attached devices:
-```bash
-adb devices -l
-```
-If using Wireless Debugging (Android 11+):
-```bash
-adb connect <ip>:<port>
-```
-
-### 2. Verify Device Architecture (ABI)
-Avoid `INSTALL_FAILED_NO_MATCHING_ABIS` by checking CPU architecture support before installation:
-```bash
-adb shell getprop ro.product.cpu.abi
-adb shell getprop ro.product.cpu.abilist64
-```
-- If `ro.product.cpu.abilist64` is empty, the device is running a 32-bit OS and cannot execute 64-bit-only (`arm64-v8a`) binaries.
-
-### 3. Handle APK vs XAPK / Split APKs
-- **Single APK:** Install directly:
-  ```bash
-  adb install -r -i com.android.vending <path_to_apk>
-  ```
-- **XAPK / Split APKs:** If the target is an `.xapk` archive or an app bundle (which throws `INSTALL_FAILED_MISSING_SPLIT` if installed alone):
-  1. Extract the `.xapk` archive (it is a standard ZIP file).
-  2. Locate `base.apk` (or `<package>.apk`) and architecture splits (`config.<abi>.apk`).
-  3. Install all split APKs in a single session:
-     ```bash
-     adb install-multiple -r -i com.android.vending base.apk config.arm64_v8a.apk
-     ```
-
-### 4. Verify Installation
-Confirm installation and installer metadata:
-```bash
-adb shell dumpsys package <package_name> | grep -E -i 'installerPackageName|versionName'
-```
-
----
-
-## Automation Helper Script
-
-The skill includes a deterministic helper script at `scripts/adb_helper.py`:
+Run the helper once, quoting the path. It lives in `scripts/adb_helper.py` next to this file
+(Claude Code: `${CLAUDE_SKILL_DIR}/scripts/adb_helper.py`):
 
 ```bash
-# List devices
-python scripts/adb_helper.py devices
-
-# Inspect device specs and ABIs
-python scripts/adb_helper.py info -s <device_or_ip:port>
-
-# Inspect an APK or XAPK
-python scripts/adb_helper.py inspect <path_to_apk_or_xapk>
-
-# Install APK or XAPK (automatically extracts and uses install-multiple for XAPKs)
-python scripts/adb_helper.py install <path_to_apk_or_xapk> -s <device_or_ip:port>
+python "<skill dir>/scripts/adb_helper.py" "<file path>" [ip[:port] | serial]
 ```
 
----
+That single command does everything:
 
-## Troubleshooting & References
+1. Finds `adb` (PATH, `ANDROID_HOME`, default SDK locations).
+2. Connects: an IP gets `adb connect` (port defaults to `5555`); with no device argument it uses the only attached device.
+3. Reads the device ABI list and screen density.
+4. For XAPK/APKS/APKM: picks the base APK, all language/feature splits, and only the ABI and density splits that match the device. Stops before installing if no ABI matches.
+5. Installs with `-r -i com.android.vending` (`install` or `install-multiple`).
+6. Pushes OBB files from the bundle to `/sdcard/Android/obb/<package>/`.
+7. Verifies `installerPackageName` via `dumpsys package` and prints an `OK: ...` line.
 
-For detailed resolutions on `INSTALL_FAILED_MISSING_SPLIT`, `INSTALL_FAILED_NO_MATCHING_ABIS`, Windows USB driver gán `WinUsb Device`, and Xiaomi/MIUI settings, consult [references/troubleshooting.md](references/troubleshooting.md).
+Exit code 0 and the `OK:` line mean success: report package, version, device and installer to the user.
+On `ERROR:` relay the message and its hint; do not retry blindly.
+
+Options: `--dry-run` (show the plan, install nothing), `--installer <package>` (default `com.android.vending`).
+
+## If arguments are missing
+
+- No file path: ask for it.
+- No device and the script reports zero or several devices: ask for the IP or serial.
+
+## Do not do without asking
+
+- Uninstalling the existing app (needed for `INSTALL_FAILED_UPDATE_INCOMPATIBLE` / `VERSION_DOWNGRADE`): it wipes app data.
+
+## Connection notes
+
+- Android 11+ Wireless debugging uses a random port and needs one-time pairing:
+  `adb pair <ip>:<pair_port> <code>`, then pass the `IP:port` shown on the Wireless debugging screen.
+- Classic TCP mode: connect USB once, run `adb tcpip 5555`, then the bare IP works.
+
+More error patterns, Windows driver fixes and Xiaomi settings: [references/troubleshooting.md](references/troubleshooting.md).
+
+Note: the installer attribute only sets what `PackageManager.getInstallSourceInfo()` / `getInstallerPackageName()` returns locally. It does not affect Play Integrity verdicts or Play licensing.

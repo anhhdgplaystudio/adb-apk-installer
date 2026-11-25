@@ -47,8 +47,9 @@ adb install-multiple -r -i com.android.vending base.apk split1.apk
 ### Verification
 Verify the installer source after installation:
 ```bash
-adb shell dumpsys package <package_name> | grep -E -i 'installerPackageName|versionName'
+adb shell "dumpsys package <package_name> | grep -E -i 'installerPackageName|versionName'"
 ```
+(The quotes make `grep` run on the device, so this also works from PowerShell/cmd.)
 
 *Note:* Setting `installerPackageName=com.android.vending` sets the local `getInstallerPackageName()` attribute in Android's PackageManager. It does not forge server-signed Google Play Integrity API / SafetyNet hardware attestation tokens.
 
